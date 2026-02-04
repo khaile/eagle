@@ -4,77 +4,186 @@
 //! - Operation counters and latency histograms
 //! - Error tracking by kind and command
 //! - Memory and connection metrics
-//! - Prometheus integration
+//! - Prometheus integration via foundations
 
-#![allow(dead_code)]
-
-use eagle_core::error::ErrorKind;
-use hashbrown::HashMap;
-use metrics::{counter, describe_counter, describe_gauge, describe_histogram, gauge, histogram};
-use parking_lot::RwLock;
 use std::sync::{
     Arc,
     atomic::{AtomicU64, Ordering},
 };
 use std::time::{Duration, Instant};
 
-/// Initialize metric descriptions for Prometheus
-/// This should be called once at startup
-pub fn describe_metrics() {
-    // Operation counters
-    describe_counter!(
-        "eagle_ops_total",
-        "Total number of operations by type (get, set, del, etc.)"
-    );
-    describe_counter!(
-        "eagle_commands_total",
-        "Total number of commands executed by command name"
-    );
+use dashmap::DashMap;
+use foundations::telemetry::metrics::{Counter, Gauge, HistogramBuilder, TimeHistogram, metrics};
+use hashbrown::HashMap;
 
-    // Latency histograms
-    describe_histogram!(
-        "eagle_operation_duration_seconds",
-        "Operation duration in seconds by operation type"
-    );
-    describe_histogram!(
-        "eagle_command_duration_seconds",
-        "Command execution duration in seconds by command name"
-    );
+use eagle_core::error::ErrorKind;
 
-    // Error metrics
-    describe_counter!("eagle_errors_total", "Total number of errors by error kind");
-    describe_counter!(
-        "eagle_command_errors_total",
-        "Total number of command errors by command name"
-    );
+/// Label types for metrics
+pub mod labels {
+    use serde::Serialize;
 
-    // Connection metrics
-    describe_gauge!(
-        "eagle_active_connections",
-        "Number of currently active client connections"
-    );
-    describe_counter!(
-        "eagle_connections_total",
-        "Total number of connections accepted since server start"
-    );
+    #[derive(Clone, Eq, Hash, PartialEq, Serialize)]
+    #[serde(rename_all = "lowercase")]
+    pub enum Operation {
+        Get,
+        Set,
+        Del,
+    }
+}
 
-    // Memory metrics
-    describe_gauge!("eagle_memory_used_bytes", "Memory used in bytes");
-    describe_gauge!("eagle_memory_available_bytes", "Memory available in bytes");
-    describe_gauge!("eagle_pmem_used_bytes", "PMEM used in bytes");
-    describe_gauge!("eagle_pmem_available_bytes", "PMEM available in bytes");
+/// EagleDB metrics definitions using foundations #[metrics] macro
+#[metrics]
+pub mod eagle {
+    /// Total number of operations by type (get, set, del, etc.)
+    pub fn ops_total(operation: super::labels::Operation) -> Counter;
 
-    // Key/database metrics
-    describe_gauge!("eagle_keys_total", "Total number of keys in the database");
-    describe_gauge!(
-        "eagle_expired_keys_total",
-        "Total number of expired keys removed"
-    );
+    /// Total number of commands executed by command name
+    pub fn commands_total(command: &'static str) -> Counter;
+
+    /// Operation duration in seconds by operation type
+    #[ctor = HistogramBuilder {
+        buckets: &[0.0001, 0.0005, 0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1.0, 5.0],
+    }]
+    pub fn operation_duration_seconds(operation: super::labels::Operation) -> TimeHistogram;
+
+    /// Command execution duration in seconds by command name
+    #[ctor = HistogramBuilder {
+        buckets: &[0.0001, 0.0005, 0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1.0, 5.0],
+    }]
+    pub fn command_duration_seconds(command: &'static str) -> TimeHistogram;
+
+    /// Total number of errors by error kind
+    pub fn errors_total(kind: &'static str) -> Counter;
+
+    /// Total number of command errors by command name
+    pub fn command_errors_total(command: &'static str) -> Counter;
+
+    /// Number of currently active client connections
+    pub fn active_connections() -> Gauge;
+
+    /// Total number of connections accepted since server start
+    pub fn connections_total() -> Counter;
+
+    /// Memory used in bytes
+    pub fn memory_used_bytes() -> Gauge;
+
+    /// Memory available in bytes
+    pub fn memory_available_bytes() -> Gauge;
+
+    /// PMEM used in bytes
+    pub fn pmem_used_bytes() -> Gauge;
+
+    /// PMEM available in bytes
+    pub fn pmem_available_bytes() -> Gauge;
+
+    /// Total number of keys in the database
+    pub fn keys_total() -> Gauge;
+
+    /// Total number of expired keys removed
+    pub fn expired_keys_total() -> Counter;
 }
 
 #[derive(Clone)]
+pub struct EagleMetrics;
+
+impl EagleMetrics {
+    pub fn new() -> Self {
+        Self
+    }
+
+    // Operation tracking
+    pub fn record_get(&self, latency: Duration) {
+        eagle::ops_total(labels::Operation::Get).inc();
+        eagle::operation_duration_seconds(labels::Operation::Get)
+            .observe(latency.as_nanos() as u64);
+    }
+
+    pub fn record_set(&self, latency: Duration) {
+        eagle::ops_total(labels::Operation::Set).inc();
+        eagle::operation_duration_seconds(labels::Operation::Set)
+            .observe(latency.as_nanos() as u64);
+    }
+
+    pub fn record_del(&self, latency: Duration) {
+        eagle::ops_total(labels::Operation::Del).inc();
+        eagle::operation_duration_seconds(labels::Operation::Del)
+            .observe(latency.as_nanos() as u64);
+    }
+
+    // Error tracking
+    pub fn record_error(&self) {
+        eagle::errors_total("unknown").inc();
+    }
+
+    /// Record an error with its specific kind for detailed metrics
+    pub fn record_error_by_kind(&self, kind: ErrorKind) {
+        eagle::errors_total(kind.as_str()).inc();
+    }
+
+    // Memory tracking
+    pub fn update_memory_usage(&self, used: u64, available: u64) {
+        eagle::memory_used_bytes().set(used);
+        eagle::memory_available_bytes().set(available);
+    }
+
+    // PMEM tracking
+    pub fn update_pmem_usage(&self, used: u64, available: u64) {
+        eagle::pmem_used_bytes().set(used);
+        eagle::pmem_available_bytes().set(available);
+    }
+
+    // Connection tracking
+    pub fn record_new_connection(&self) {
+        eagle::active_connections().inc();
+        eagle::connections_total().inc();
+    }
+
+    pub fn record_connection_closed(&self) {
+        eagle::active_connections().dec();
+    }
+
+    // Command tracking - uses static strings for common commands
+    pub fn record_command(&self, command: &'static str) {
+        eagle::commands_total(command).inc();
+    }
+
+    /// Record command execution with latency
+    pub fn record_command_latency(&self, command: &'static str, latency: Duration) {
+        eagle::commands_total(command).inc();
+        eagle::command_duration_seconds(command).observe(latency.as_nanos() as u64);
+    }
+
+    /// Record a command error
+    pub fn record_command_error(&self, command: &'static str) {
+        eagle::command_errors_total(command).inc();
+        eagle::errors_total("command").inc();
+    }
+
+    /// Update the total key count gauge
+    pub fn update_key_count(&self, count: u64) {
+        eagle::keys_total().set(count);
+    }
+
+    /// Record expired keys being removed
+    pub fn record_expired_keys(&self, count: u64) {
+        eagle::expired_keys_total().inc_by(count);
+    }
+}
+
+impl Default for EagleMetrics {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Legacy MetricsCollector for backwards compatibility
+/// This wraps EagleMetrics and adds local atomic counters for
+/// programmatic access to metrics values
+#[derive(Clone)]
 pub struct MetricsCollector {
-    // Operation counters
+    inner: EagleMetrics,
+
+    // Operation counters (for programmatic access)
     get_ops: Arc<AtomicU64>,
     set_ops: Arc<AtomicU64>,
     del_ops: Arc<AtomicU64>,
@@ -100,7 +209,7 @@ pub struct MetricsCollector {
     total_connections: Arc<AtomicU64>,
 
     // Command statistics
-    command_stats: Arc<RwLock<HashMap<String, u64>>>,
+    command_stats: Arc<DashMap<String, u64>>,
 
     // Start time for uptime calculation
     start_time: Instant,
@@ -109,6 +218,7 @@ pub struct MetricsCollector {
 impl MetricsCollector {
     pub fn new() -> Self {
         Self {
+            inner: EagleMetrics::new(),
             get_ops: Arc::new(AtomicU64::default()),
             set_ops: Arc::new(AtomicU64::default()),
             del_ops: Arc::new(AtomicU64::default()),
@@ -122,7 +232,7 @@ impl MetricsCollector {
             pmem_available: Arc::new(AtomicU64::default()),
             active_connections: Arc::new(AtomicU64::default()),
             total_connections: Arc::new(AtomicU64::default()),
-            command_stats: Arc::new(RwLock::new(HashMap::new())),
+            command_stats: Arc::new(DashMap::new()),
             start_time: Instant::now(),
         }
     }
@@ -132,112 +242,97 @@ impl MetricsCollector {
         self.get_ops.fetch_add(1, Ordering::Relaxed);
         self.get_latency
             .fetch_add(latency.as_micros() as u64, Ordering::Relaxed);
-
-        counter!("eagle_ops_total", "operation" => "get").increment(1);
-        histogram!("eagle_operation_duration_seconds", "operation" => "get")
-            .record(latency.as_secs_f64());
+        self.inner.record_get(latency);
     }
 
     pub fn record_set(&self, latency: Duration) {
         self.set_ops.fetch_add(1, Ordering::Relaxed);
         self.set_latency
             .fetch_add(latency.as_micros() as u64, Ordering::Relaxed);
-
-        counter!("eagle_ops_total", "operation" => "set").increment(1);
-        histogram!("eagle_operation_duration_seconds", "operation" => "set")
-            .record(latency.as_secs_f64());
+        self.inner.record_set(latency);
     }
 
     pub fn record_del(&self, latency: Duration) {
         self.del_ops.fetch_add(1, Ordering::Relaxed);
         self.del_latency
             .fetch_add(latency.as_micros() as u64, Ordering::Relaxed);
-
-        counter!("eagle_ops_total", "operation" => "del").increment(1);
-        histogram!("eagle_operation_duration_seconds", "operation" => "del")
-            .record(latency.as_secs_f64());
+        self.inner.record_del(latency);
     }
 
     // Error tracking
     pub fn record_error(&self) {
         self.errors.fetch_add(1, Ordering::Relaxed);
-        counter!("eagle_errors_total").increment(1);
+        self.inner.record_error();
     }
 
-    /// Record an error with its specific kind for detailed metrics
     pub fn record_error_by_kind(&self, kind: ErrorKind) {
         self.errors.fetch_add(1, Ordering::Relaxed);
-        counter!("eagle_errors_total", "kind" => kind.as_str().to_string()).increment(1);
+        self.inner.record_error_by_kind(kind);
     }
 
     // Memory tracking
     pub fn update_memory_usage(&self, used: u64, available: u64) {
         self.memory_used.store(used, Ordering::Relaxed);
         self.memory_available.store(available, Ordering::Relaxed);
-
-        gauge!("eagle_memory_used_bytes").set(used as f64);
-        gauge!("eagle_memory_available_bytes").set(available as f64);
+        self.inner.update_memory_usage(used, available);
     }
 
     // PMEM tracking
     pub fn update_pmem_usage(&self, used: u64, available: u64) {
         self.pmem_used.store(used, Ordering::Relaxed);
         self.pmem_available.store(available, Ordering::Relaxed);
-
-        gauge!("eagle_pmem_used_bytes").set(used as f64);
-        gauge!("eagle_pmem_available_bytes").set(available as f64);
+        self.inner.update_pmem_usage(used, available);
     }
 
     // Connection tracking
     pub fn record_new_connection(&self) {
         self.active_connections.fetch_add(1, Ordering::Relaxed);
         self.total_connections.fetch_add(1, Ordering::Relaxed);
-
-        gauge!("eagle_active_connections").increment(1.0);
-        counter!("eagle_connections_total").increment(1);
+        self.inner.record_new_connection();
     }
 
     pub fn record_connection_closed(&self) {
-        self.active_connections.fetch_sub(1, Ordering::Relaxed);
-        gauge!("eagle_active_connections").decrement(1.0);
+        let _ =
+            self.active_connections
+                .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |current| {
+                    if current > 0 { Some(current - 1) } else { None }
+                });
+        self.inner.record_connection_closed();
     }
 
-    // Command tracking
+    // Command tracking (stores stats locally, doesn't forward to foundations for dynamic strings)
     pub fn record_command(&self, command: &str) {
-        let mut stats = self.command_stats.write();
-        *stats.entry(command.to_string()).or_default() += 1;
-
-        counter!("eagle_commands_total", "command" => command.to_string()).increment(1);
+        *self.command_stats.entry(command.to_string()).or_default() += 1;
+        // Note: foundations metrics require static strings, so we skip the prometheus recording
+        // for dynamic command names. Use record_command_static for prometheus.
     }
 
-    /// Record command execution with latency
-    pub fn record_command_latency(&self, command: &str, latency: Duration) {
-        let mut stats = self.command_stats.write();
-        *stats.entry(command.to_string()).or_default() += 1;
-
-        counter!("eagle_commands_total", "command" => command.to_string()).increment(1);
-        histogram!("eagle_command_duration_seconds", "command" => command.to_string())
-            .record(latency.as_secs_f64());
+    /// Record command with static string (for prometheus metrics)
+    pub fn record_command_static(&self, command: &'static str, latency: Duration) {
+        *self.command_stats.entry(command.to_string()).or_default() += 1;
+        self.inner.record_command_latency(command, latency);
     }
 
-    /// Record a command error
-    pub fn record_command_error(&self, command: &str) {
+    pub fn record_command_latency(&self, command: &str, _latency: Duration) {
+        *self.command_stats.entry(command.to_string()).or_default() += 1;
+        // Note: foundations requires static strings for labels
+    }
+
+    pub fn record_command_error(&self, _command: &str) {
         self.errors.fetch_add(1, Ordering::Relaxed);
-        counter!("eagle_command_errors_total", "command" => command.to_string()).increment(1);
-        counter!("eagle_errors_total", "kind" => "command").increment(1);
+        // Note: foundations requires static strings for labels
     }
 
-    /// Update the total key count gauge
     pub fn update_key_count(&self, count: u64) {
-        gauge!("eagle_keys_total").set(count as f64);
+        self.inner.update_key_count(count);
     }
 
-    /// Record expired keys being removed
     pub fn record_expired_keys(&self, count: u64) {
-        counter!("eagle_expired_keys_total").increment(count);
+        self.inner.record_expired_keys(count);
     }
 
     // Metrics retrieval
+    #[must_use]
     pub fn get_operation_metrics(&self) -> OperationMetrics {
         OperationMetrics {
             get_ops: self.get_ops.load(Ordering::Relaxed),
@@ -258,6 +353,7 @@ impl MetricsCollector {
         }
     }
 
+    #[must_use]
     pub fn get_memory_metrics(&self) -> MemoryMetrics {
         MemoryMetrics {
             memory_used: self.memory_used.load(Ordering::Relaxed),
@@ -267,6 +363,7 @@ impl MetricsCollector {
         }
     }
 
+    #[must_use]
     pub fn get_connection_metrics(&self) -> ConnectionMetrics {
         ConnectionMetrics {
             active_connections: self.active_connections.load(Ordering::Relaxed),
@@ -274,19 +371,24 @@ impl MetricsCollector {
         }
     }
 
+    #[must_use]
     pub fn get_command_stats(&self) -> HashMap<String, u64> {
-        self.command_stats.read().clone()
+        self.command_stats
+            .iter()
+            .map(|entry| (entry.key().clone(), *entry.value()))
+            .collect()
     }
 
+    #[must_use]
     pub fn get_uptime(&self) -> Duration {
         self.start_time.elapsed()
     }
 
+    #[must_use]
     pub fn get_error_count(&self) -> u64 {
         self.errors.load(Ordering::Relaxed)
     }
 
-    // Helper functions
     fn calculate_average_latency(&self, total_latency: u64, total_ops: u64) -> f64 {
         if total_ops == 0 {
             0.0
@@ -324,6 +426,16 @@ pub struct MemoryMetrics {
 pub struct ConnectionMetrics {
     pub active_connections: u64,
     pub total_connections: u64,
+}
+
+// Compile-time assertions for thread safety
+fn _assert_send_sync() {
+    fn assert_send<T: Send>() {}
+    fn assert_sync<T: Sync>() {}
+    assert_send::<EagleMetrics>();
+    assert_sync::<EagleMetrics>();
+    assert_send::<MetricsCollector>();
+    assert_sync::<MetricsCollector>();
 }
 
 #[cfg(test)]

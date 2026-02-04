@@ -11,7 +11,7 @@ exceptional performance while ensuring data durability.
 - High-performance concurrent operations with RCU synchronization
 - Crash recovery support and snapshot management
 - Cluster support for horizontal scaling
-- Comprehensive metrics collection with Prometheus integration
+- Comprehensive metrics collection with Prometheus integration via [foundations](https://github.com/cloudflare/foundations)
 - NUMA-aware design
 - Memory security with secure buffer handling
 - Advanced hash-based organization with DashMap optimization
@@ -36,7 +36,8 @@ Network and server-specific functionality:
 
 - **Network Layer**: Handles client connections, protocol management, and cluster coordination
 - **Command Processor**: Implementation of various data operations including TTL, scans, and hash operations
-- **Metrics**: Performance monitoring and reporting with Prometheus export
+- **Metrics**: Performance monitoring and reporting via
+  Cloudflare's [foundations](https://github.com/cloudflare/foundations) telemetry framework with Prometheus export
 - **Configuration**: Cluster and server configuration management
 
 ## Building
@@ -60,7 +61,7 @@ just build
 
 ```bash
 # Run all tests (entire workspace)
-cargo test --verbose --all-features
+cargo test --all-features
 
 # Run tests for specific crate
 cargo test -p eagle-core
@@ -72,7 +73,7 @@ cargo bench
 # Using just (recommended)
 just test          # Run all tests
 just tests name    # Run a specific test
-just nextest       # Run tests with nextest for better performance
+just nextest       # Run tests with nextest (faster, used in CI)
 just run-benches   # Run all benchmarks
 ```
 
@@ -104,7 +105,9 @@ Use `just` for common development tasks:
 
 ```bash
 just --list          # Show all available commands
-just rust-lint        # Format and lint code
+just rust-lint       # Format and lint code (modifies files)
+just lint-check      # Check lint without modifying (CI mode)
+just check           # Quick compilation check
 just clean           # Clean build artifacts
 just server          # Run development server on port 6380
 ```
