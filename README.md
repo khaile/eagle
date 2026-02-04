@@ -36,7 +36,8 @@ Network and server-specific functionality:
 
 - **Network Layer**: Handles client connections, protocol management, and cluster coordination
 - **Command Processor**: Implementation of various data operations including TTL, scans, and hash operations
-- **Metrics**: Performance monitoring and reporting via Cloudflare's [foundations](https://github.com/cloudflare/foundations) telemetry framework with Prometheus export
+- **Metrics**: Performance monitoring and reporting via
+  Cloudflare's [foundations](https://github.com/cloudflare/foundations) telemetry framework with Prometheus export
 - **Configuration**: Cluster and server configuration management
 
 ## Building
