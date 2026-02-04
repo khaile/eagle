@@ -11,8 +11,8 @@ resolver = "2"
 edition = "2024"
 authors = ["Khai Le <khaile.to@gmail.com>"]
 categories = ["pmem", "key-value"]
-repository = "github.com:khaile/eagle.git"
-description = "A high-performance key-value store with persistent memory support"
+repository = "https://github.com/khaile/eagle.git"
+description = "A high-performance key-value store with PMEM support"
 license = "MIT"
 
 [workspace.dependencies]
