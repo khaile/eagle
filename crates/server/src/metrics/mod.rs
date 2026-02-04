@@ -1,35 +1,30 @@
 pub mod collector;
 
-use std::env;
-use std::net::SocketAddr;
+use anyhow::Result;
+use foundations::telemetry::metrics::collect;
+use foundations::telemetry::settings::MetricsSettings;
 
-use anyhow::{Context, Result};
-use metrics_exporter_prometheus::PrometheusBuilder;
-use tracing::info;
+pub use collector::{EagleMetrics, MetricsCollector};
 
-pub use collector::describe_metrics;
-
+/// Initialize metrics (no-op for foundations - metrics are auto-registered)
+/// The telemetry server should be started separately if needed
 pub fn init_metrics() -> Result<()> {
-    let host = env::var("PROMETHEUS_HOST").unwrap_or_else(|_| "127.0.0.1".to_string());
-    let port = env::var("PROMETHEUS_PORT").unwrap_or_else(|_| "9000".to_string());
-    let addr: SocketAddr = format!("{}:{}", host, port).parse().with_context(|| {
-        format!(
-            "failed to parse PROMETHEUS_HOST='{}' and PROMETHEUS_PORT='{}' into a socket address",
-            host, port
-        )
-    })?;
-
-    PrometheusBuilder::new()
-        .with_http_listener(addr)
-        .install()?;
-
-    // Register metric descriptions for better Prometheus labels
-    describe_metrics();
-
-    info!(
-        address = %addr,
-        "Prometheus metrics endpoint started"
-    );
-
+    // foundations metrics are automatically registered when first accessed
+    // No explicit initialization needed
     Ok(())
+}
+
+/// Collect all metrics in Prometheus text format
+pub fn collect_metrics() -> String {
+    let settings = MetricsSettings::default();
+    collect(&settings).unwrap_or_default()
+}
+
+/// Collect all metrics including optional ones
+pub fn collect_all_metrics() -> String {
+    let settings = MetricsSettings {
+        report_optional: true,
+        ..Default::default()
+    };
+    collect(&settings).unwrap_or_default()
 }

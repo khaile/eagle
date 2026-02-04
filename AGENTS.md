@@ -152,6 +152,7 @@ match self.data.entry(key.to_vec()) {
 
 | Crate | Purpose |
 |-------|---------|
+| `foundations` | Cloudflare's telemetry framework (metrics, logging) |
 | `dashmap` | Concurrent hash map |
 | `parking_lot` | Fast locks |
 | `crossbeam` | Epoch-based reclamation |

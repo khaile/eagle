@@ -29,14 +29,16 @@ crossbeam-epoch = "0.9"
 crossbeam-queue = "0.3"
 crossbeam-utils = "0.8"
 dashmap = "6.1"
+foundations = { version = "5.4", default-features = false, features = [
+    "metrics",
+    "telemetry-server",
+] }
 glob = "0.3"
 hashbrown = "0.16"
 itoa = "1.0"
 libc = "0.2"
 lz4_flex = "0.12"
 memmap2 = "0.9"
-metrics = "0.24"
-metrics-exporter-prometheus = "0.18"
 num_cpus = "1.17"
 parking_lot = "0.12"
 rayon = "1.11"

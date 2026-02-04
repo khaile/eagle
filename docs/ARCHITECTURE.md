@@ -32,10 +32,10 @@ low-latency, high-concurrency workloads with strong durability guarantees.
 │  │ GET/SET/DEL │  │ HGET/HSET   │  │ JOIN/REPL        │     │
 │  └─────────────┘  └─────────────┘  └──────────────────┘     │
 ├─────────────────────────────────────────────────────────────┤
-│                   Metrics (`metrics/`)                      │
+│                   Metrics (`metrics/` - foundations)             │
 │  ┌─────────────┐  ┌─────────────┐  ┌──────────────────┐     │
-│  │ Prometheus  │  │ Collection  │  │ Health Endpoints │     │
-│  │ Exporter    │  │ Engine      │  │ & Diagnostics    │     │
+│  │ #[metrics]  │  │ Collection  │  │ Health Endpoints │     │
+│  │ Macro       │  │ Engine      │  │ & Diagnostics    │     │
 │  └─────────────┘  └─────────────┘  └──────────────────┘     │
 ├─────────────────────────────────────────────────────────────┤
 │                   eagle-core Crate                           │
@@ -127,9 +127,11 @@ Runtime configuration, bootstrapping, and administrative commands using `clap`.
 
 ### Observability (`metrics/` - `eagle-server`)
 
-- Exposes performance counters, histograms, and tracing hooks.
-- Prometheus integration for external monitoring.
-- Health endpoints and diagnostics.
+- Uses Cloudflare's [foundations](https://github.com/cloudflare/foundations) telemetry framework
+- Declarative metrics definitions with `#[metrics]` macro
+- Exposes performance counters, histograms, and tracing hooks
+- Prometheus integration for external monitoring
+- Health endpoints and diagnostics
 
 ## Data Flow (Request -> Response)
 
