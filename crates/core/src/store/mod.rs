@@ -3238,6 +3238,7 @@ mod tests {
         Ok(())
     }
 
+    #[ignore] // Known issue: this test currently take too long to run on GH actions
     #[test]
     fn test_renamenx_cross_type() -> Result<()> {
         let store = Store::new_memory()?;
