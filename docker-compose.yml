@@ -1,0 +1,27 @@
+services:
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus
+    ports:
+      - "9090:9090"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ./o11y/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./o11y/prometheus/data:/prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--web.enable-lifecycle"
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./o11y/grafana/provisioning/datasources:/etc/grafana/provisioning/datasources
+      - ./o11y/grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards
+      - ./o11y/grafana/data:/var/lib/grafana
+    depends_on:
+      - prometheus

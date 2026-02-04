@@ -1,0 +1,6 @@
+default: true
+MD013:
+  line_length: 120
+MD060:
+  # Table column style - use aligned style as requested
+  style: aligned

@@ -1,0 +1,60 @@
+# Rust build artifacts
+/target
+**/*.rs.bk
+
+# Debug files
+*.exe
+*.pdb
+*.dll
+*.so
+*.dylib
+
+# IDE specific
+.idea/
+.vscode/
+*.swp
+*.swo
+*.sublime-workspace
+*.code-workspace
+
+# Rust analyzer files
+.rustc/
+.history/
+
+# Dependency files
+Cargo.Bazel.lock
+Cargo.Bazel.remote
+
+# Logs and databases
+*.log
+*.sql
+*.sqlite
+
+# Core dumps and crash reports
+core
+*.core
+*.dmp
+!crates/core
+
+# OS generated
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.bak
+*.swp
+*~
+
+# o11y data
+o11y/*/data
+
+# Snapshot files
+*.eagle
+
+plans/*

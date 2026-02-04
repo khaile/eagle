@@ -1,0 +1,58 @@
+[package]
+repository = { workspace = true }
+edition = { workspace = true }
+license = { workspace = true }
+categories = { workspace = true }
+authors = { workspace = true }
+name = "eagle-core"
+version = "0.1.0"
+keywords = ["pmem", "KV"]
+description = "EagleDB core library"
+
+[features]
+default = []
+compression = ["lz4_flex"]
+
+[dependencies]
+ahash = { workspace = true }
+anyhow = { workspace = true }
+byteorder = { workspace = true }
+bytes = { workspace = true }
+crc32fast = { workspace = true }
+crossbeam = { workspace = true }
+crossbeam-epoch = { workspace = true }
+crossbeam-queue = { workspace = true }
+crossbeam-utils = { workspace = true }
+dashmap = { workspace = true }
+glob = { workspace = true }
+hashbrown = { workspace = true }
+itoa = { workspace = true }
+libc = { workspace = true }
+lz4_flex = { workspace = true, optional = true }
+memmap2 = { workspace = true }
+num_cpus = { workspace = true }
+parking_lot = { workspace = true }
+rayon = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+zeroize = { workspace = true }
+
+[dev-dependencies]
+criterion = "0.8"
+proptest = "1.9"
+rand = "0.9"
+redis = "1.0"
+tempfile = "3.24"
+
+[[bench]]
+name = "pmem_bench"
+harness = false
+
+[[bench]]
+name = "memory_bench"
+harness = false
+
+[[bench]]
+name = "redis_comparison"
+harness = false

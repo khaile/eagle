@@ -1,0 +1,50 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  release-linux-x86_64:
+    name: Release (linux x86_64)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install PMEM dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libndctl-dev libdaxctl-dev
+
+      - name: Run tests
+        run: cargo test --workspace --all-features --release
+
+      - name: Build release binary
+        run: cargo build --workspace --release
+
+      - name: Package artifact
+        run: |
+          mkdir -p dist
+          cp target/release/eagle dist/eagle
+          tar -czf dist/eagle-linux-x86_64.tar.gz -C dist eagle
+
+      - name: Upload release asset
+        id: release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/eagle-linux-x86_64.tar.gz
+          generate_release_notes: true
+
+      - name: Release summary
+        run: |
+          echo "Release created: ${{ steps.release.outputs.url }}"

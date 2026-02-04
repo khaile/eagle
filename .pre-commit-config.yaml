@@ -1,0 +1,85 @@
+default_stages: [pre-commit]
+default_install_hook_types: [pre-commit, pre-push]
+
+repos:
+  # Standard pre-commit hooks
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: check-yaml
+      - id: check-toml
+      - id: mixed-line-ending
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: detect-private-key
+
+  # CI scripts
+  - repo: local
+    hooks:
+      - id: markdownlint
+        name: markdownlint
+        entry: ./scripts/ci/markdownlint.sh
+        args: ["--fix", "--staged"]
+        language: system
+        types: [markdown]
+        pass_filenames: false
+
+      - id: shellcheck
+        name: shellcheck
+        entry: ./scripts/ci/shellcheck.sh
+        args: ["--fix", "--staged"]
+        language: system
+        types: [shell]
+        pass_filenames: false
+
+      # - id: rust-version-sync
+      #   name: Rust version sync
+      #   entry: ./scripts/ci/sync-rust-version.sh
+      #   args: ["--fix"]
+      #   language: system
+      #   files: ^rust-toolchain\.toml$
+      #   pass_filenames: false
+
+      - id: taplo
+        name: taplo (TOML format)
+        entry: ./scripts/ci/taplo.sh
+        args: ["--fix", "--staged"]
+        language: system
+        types: [toml]
+        pass_filenames: false
+
+  # Rust
+  - repo: local
+    hooks:
+      - id: cargo-fmt
+        name: cargo fmt
+        entry: cargo fmt --all
+        language: system
+        types: [rust]
+        pass_filenames: false
+
+      - id: cargo-sort
+        name: cargo sort
+        entry: cargo sort --workspace
+        language: system
+        files: (^|/)Cargo\.toml$
+        pass_filenames: false
+
+      - id: cargo-check
+        name: cargo check
+        entry: cargo check
+        args: ["--workspace", "--all-features", "--all-targets"]
+        language: system
+        types: [rust]
+        pass_filenames: false
+        stages: [pre-commit]
+
+      - id: cargo-clippy
+        name: cargo clippy
+        entry: cargo clippy
+        args:
+          ["--workspace", "--all-features", "--all-targets", "--manifest-path", "Cargo.toml", "--", "-D", "warnings"]
+        language: system
+        types: [rust]
+        pass_filenames: false
+        stages: [pre-push]

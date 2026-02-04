@@ -1,0 +1,90 @@
+name: Benchmarks
+
+on:
+  push:
+    branches: ["main"]
+    paths:
+      - "**.rs"
+      - "**Cargo.toml"
+      - "Cargo.lock"
+      - "docker-compose.yml"
+      - "crates/core/benches/**"
+      - ".github/workflows/bench.yml"
+  pull_request:
+    branches: ["main"]
+    paths:
+      - "**.rs"
+      - "**Cargo.toml"
+      - "Cargo.lock"
+      - "docker-compose.yml"
+      - "crates/core/benches/**"
+      - ".github/workflows/bench.yml"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  bench:
+    name: Run Benchmarks
+    runs-on: ubuntu-latest
+
+    services:
+      redis:
+        image: redis:8-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install PMEM dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libndctl-dev libdaxctl-dev redis-tools gnuplot
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-bench-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-bench-
+
+      - name: Build EagleDB
+        run: cargo build --workspace --release
+
+      - name: Start EagleDB server
+        run: |
+          ./target/release/eagle --port 6380 &
+          sleep 2
+          # Verify EagleDB is running
+          echo "PING" | nc -q 1 localhost 6380 || echo "EagleDB started"
+
+      - name: Verify Redis is running
+        run: redis-cli -h localhost -p 6379 ping
+
+      - name: Run benchmarks
+        run: cargo bench -p eagle-core --all-features
+
+      - name: Upload benchmark results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: benchmark-results
+          path: target/criterion
+          retention-days: 30
