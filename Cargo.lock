@@ -647,6 +647,7 @@ dependencies = [
  "axum",
  "bytes",
  "clap",
+ "dashmap 6.1.0",
  "eagle-core",
  "foundations",
  "hashbrown 0.16.1",

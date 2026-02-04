@@ -6,17 +6,17 @@
 //! - Memory and connection metrics
 //! - Prometheus integration via foundations
 
-#![allow(dead_code)]
-
-use eagle_core::error::ErrorKind;
-use foundations::telemetry::metrics::{Counter, Gauge, HistogramBuilder, TimeHistogram, metrics};
-use hashbrown::HashMap;
-use parking_lot::RwLock;
 use std::sync::{
     Arc,
     atomic::{AtomicU64, Ordering},
 };
 use std::time::{Duration, Instant};
+
+use dashmap::DashMap;
+use foundations::telemetry::metrics::{Counter, Gauge, HistogramBuilder, TimeHistogram, metrics};
+use hashbrown::HashMap;
+
+use eagle_core::error::ErrorKind;
 
 /// Label types for metrics
 pub mod labels {
@@ -166,9 +166,7 @@ impl EagleMetrics {
 
     /// Record expired keys being removed
     pub fn record_expired_keys(&self, count: u64) {
-        for _ in 0..count {
-            eagle::expired_keys_total().inc();
-        }
+        eagle::expired_keys_total().inc_by(count);
     }
 }
 
@@ -211,7 +209,7 @@ pub struct MetricsCollector {
     total_connections: Arc<AtomicU64>,
 
     // Command statistics
-    command_stats: Arc<RwLock<HashMap<String, u64>>>,
+    command_stats: Arc<DashMap<String, u64>>,
 
     // Start time for uptime calculation
     start_time: Instant,
@@ -234,7 +232,7 @@ impl MetricsCollector {
             pmem_available: Arc::new(AtomicU64::default()),
             active_connections: Arc::new(AtomicU64::default()),
             total_connections: Arc::new(AtomicU64::default()),
-            command_stats: Arc::new(RwLock::new(HashMap::new())),
+            command_stats: Arc::new(DashMap::new()),
             start_time: Instant::now(),
         }
     }
@@ -294,28 +292,29 @@ impl MetricsCollector {
     }
 
     pub fn record_connection_closed(&self) {
-        self.active_connections.fetch_sub(1, Ordering::Relaxed);
+        let _ =
+            self.active_connections
+                .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |current| {
+                    if current > 0 { Some(current - 1) } else { None }
+                });
         self.inner.record_connection_closed();
     }
 
     // Command tracking (stores stats locally, doesn't forward to foundations for dynamic strings)
     pub fn record_command(&self, command: &str) {
-        let mut stats = self.command_stats.write();
-        *stats.entry(command.to_string()).or_default() += 1;
+        *self.command_stats.entry(command.to_string()).or_default() += 1;
         // Note: foundations metrics require static strings, so we skip the prometheus recording
         // for dynamic command names. Use record_command_static for prometheus.
     }
 
     /// Record command with static string (for prometheus metrics)
     pub fn record_command_static(&self, command: &'static str, latency: Duration) {
-        let mut stats = self.command_stats.write();
-        *stats.entry(command.to_string()).or_default() += 1;
+        *self.command_stats.entry(command.to_string()).or_default() += 1;
         self.inner.record_command_latency(command, latency);
     }
 
     pub fn record_command_latency(&self, command: &str, _latency: Duration) {
-        let mut stats = self.command_stats.write();
-        *stats.entry(command.to_string()).or_default() += 1;
+        *self.command_stats.entry(command.to_string()).or_default() += 1;
         // Note: foundations requires static strings for labels
     }
 
@@ -333,6 +332,7 @@ impl MetricsCollector {
     }
 
     // Metrics retrieval
+    #[must_use]
     pub fn get_operation_metrics(&self) -> OperationMetrics {
         OperationMetrics {
             get_ops: self.get_ops.load(Ordering::Relaxed),
@@ -353,6 +353,7 @@ impl MetricsCollector {
         }
     }
 
+    #[must_use]
     pub fn get_memory_metrics(&self) -> MemoryMetrics {
         MemoryMetrics {
             memory_used: self.memory_used.load(Ordering::Relaxed),
@@ -362,6 +363,7 @@ impl MetricsCollector {
         }
     }
 
+    #[must_use]
     pub fn get_connection_metrics(&self) -> ConnectionMetrics {
         ConnectionMetrics {
             active_connections: self.active_connections.load(Ordering::Relaxed),
@@ -369,14 +371,20 @@ impl MetricsCollector {
         }
     }
 
+    #[must_use]
     pub fn get_command_stats(&self) -> HashMap<String, u64> {
-        self.command_stats.read().clone()
+        self.command_stats
+            .iter()
+            .map(|entry| (entry.key().clone(), *entry.value()))
+            .collect()
     }
 
+    #[must_use]
     pub fn get_uptime(&self) -> Duration {
         self.start_time.elapsed()
     }
 
+    #[must_use]
     pub fn get_error_count(&self) -> u64 {
         self.errors.load(Ordering::Relaxed)
     }
@@ -418,6 +426,16 @@ pub struct MemoryMetrics {
 pub struct ConnectionMetrics {
     pub active_connections: u64,
     pub total_connections: u64,
+}
+
+// Compile-time assertions for thread safety
+fn _assert_send_sync() {
+    fn assert_send<T: Send>() {}
+    fn assert_sync<T: Sync>() {}
+    assert_send::<EagleMetrics>();
+    assert_sync::<EagleMetrics>();
+    assert_send::<MetricsCollector>();
+    assert_sync::<MetricsCollector>();
 }
 
 #[cfg(test)]
